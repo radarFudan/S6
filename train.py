@@ -299,7 +299,7 @@ if __name__ == "__main__":
     config = yaml.safe_load(open(args.config, "r"))
 
     # read the data_dir from the command line
-    config.data_kwargs["data_dir"] = args.data_dir
+    config["data_dir"] = args.data_dir
 
     if os.environ.get("DEBUG") == "1":
         config["save_interval"] = 2

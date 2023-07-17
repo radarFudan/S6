@@ -22,6 +22,7 @@ log_interval: 50
 
 # Data
 dataset: "wikitext103"
+data_dir: null
 vocab_size: 50257
 l_max: 1024
 
@@ -30,7 +31,6 @@ data_kwargs:
     batch_size_eval: 16
     num_workers: 4
     pin_memory: False
-    data_dir: null
 
 rng_keys: ["dropout"]
 
