@@ -17,8 +17,13 @@ import optax
 from functools import partial
 
 from dataloading import create_wikitext_dataset, create_icl_datasets
-from train_utils import init_model_state, \
-        get_first_device, ProgressMeter, seed_all, reshape_batch_per_device
+from train_utils import (
+    init_model_state,
+    get_first_device,
+    ProgressMeter,
+    seed_all,
+    reshape_batch_per_device,
+)
 from src.models import get_model
 
 
@@ -28,19 +33,25 @@ def main():
     rng, init_rng = random.split(rng)
     seed_all(config.seed)
 
-    files = glob.glob(osp.join(config.output_dir, 'checkpoints', '*'))
+    files = glob.glob(osp.join(config.output_dir, "checkpoints", "*"))
     if len(files) > 0:
-        print('Found previous checkpoints', files)
+        print("Found previous checkpoints", files)
         config.ckpt = config.output_dir
     else:
         config.ckpt = None
 
     if is_master_process:
-        root_dir = os.environ['DATA_DIR']
-        os.makedirs(osp.join(root_dir, 'wandb'), exist_ok=True)
+        root_dir = os.environ["DATA_DIR"]
+        os.makedirs(osp.join(root_dir, "wandb"), exist_ok=True)
 
-        wandb.init(project=config.project, entity=config.entity, config=config,
-                   dir=root_dir, id=config.run_id, resume='allow')
+        wandb.init(
+            project=config.project,
+            entity=config.entity,
+            config=config,
+            dir=root_dir,
+            id=config.run_id,
+            resume="allow",
+        )
         wandb.run.name = config.run_id
         wandb.run.save()
 
@@ -50,7 +61,7 @@ def main():
         train_loader, val_loader, test_loader = create_icl_datasets(config)
     else:
         raise NotImplementedError("Dataset not implemented")
-    log_metrics = ['loss', 'accuracy']
+    log_metrics = ["loss", "accuracy", "perplexity"]
 
     batch = next(iter(train_loader))
     inputs = jnp.array(batch[0].numpy())
@@ -66,18 +77,21 @@ def main():
     model = get_model(config)
     state, schedule_fn = init_model_state(init_rng, model, batch[0], config)
     if config.ckpt is not None:
-        state = checkpoints.restore_checkpoint(osp.join(config.ckpt, 'checkpoints'), state)
-        print('Restored from checkpoint')
+        state = checkpoints.restore_checkpoint(
+            osp.join(config.ckpt, "checkpoints"), state
+        )
+        print("Restored from checkpoint")
 
     iteration = int(state.step)
     state = jax_utils.replicate(state)
 
-    ckpt_dir = osp.join(config.output_dir, 'checkpoints')
+    ckpt_dir = osp.join(config.output_dir, "checkpoints")
 
     rngs = random.split(rng, jax.local_device_count())
     while iteration <= config.total_steps:
-        iteration, state, rngs = train(iteration, log_metrics, state, train_loader,
-                                       schedule_fn, rngs, ckpt_dir)
+        iteration, state, rngs = train(
+            iteration, log_metrics, state, train_loader, schedule_fn, rngs, ckpt_dir
+        )
 
         validate(iteration, state, val_loader, val=True)
 
@@ -92,13 +106,8 @@ def train_step(batch, state, rng, vocab_size):
     targets = batch[1]
 
     def loss_fn(params):
-        variables = {'params': params, **state.model_state}
-        out = state.apply_fn(
-            variables,
-            inputs,
-            training=True,
-            rngs=rngs
-        )
+        variables = {"params": params, **state.model_state}
+        out = state.apply_fn(variables, inputs, training=True, rngs=rngs)
         out_tuple, _ = out
         logits = out_tuple.logits
         labels = jax.nn.one_hot(targets, num_classes=vocab_size)
@@ -107,14 +116,12 @@ def train_step(batch, state, rng, vocab_size):
         loss = loss.mean()
         preds = jnp.argmax(logits, axis=-1)
         accuracy = (preds == targets).mean()
-        out_dict = {'loss': loss,
-                    'accuracy': accuracy}
+        out_dict = {"loss": loss, "accuracy": accuracy, "perplexity": jnp.exp(loss)}
 
         return loss, out_dict
 
-    return_dict, grads = jax.value_and_grad(loss_fn,
-                                            has_aux=True)(state.params)
-    grads = jax.lax.pmean(grads, axis_name='batch')
+    return_dict, grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params)
+    grads = jax.lax.pmean(grads, axis_name="batch")
     new_state = state.apply_gradients(
         grads=grads,
     )
@@ -123,11 +130,12 @@ def train_step(batch, state, rng, vocab_size):
 
 
 def train(iteration, log_metrics, state, train_loader, schedule_fn, rngs, ckpt_dir):
-    progress = ProgressMeter(config.total_steps,
-                             ['time', 'data'] + log_metrics)
+    progress = ProgressMeter(config.total_steps, ["time", "data"] + log_metrics)
 
     num_devices = jax.local_device_count()
-    p_train_step = jax.pmap(partial(train_step, vocab_size=config.vocab_size), axis_name='batch')
+    p_train_step = jax.pmap(
+        partial(train_step, vocab_size=config.vocab_size), axis_name="batch"
+    )
 
     end = time.time()
     for batch in train_loader:
@@ -149,10 +157,11 @@ def train(iteration, log_metrics, state, train_loader, schedule_fn, rngs, ckpt_d
         progress.update(n=batch_size, **{k: v for k, v in metrics.items()})
 
         if is_master_process and iteration % config.log_interval == 0:
-            wandb.log({'train/lr': schedule_fn(iteration)}, step=iteration)
-            wandb.log({**{f'train/{metric}': val
-                          for metric, val in metrics.items()}
-                       }, step=iteration)
+            wandb.log({"train/lr": schedule_fn(iteration)}, step=iteration)
+            wandb.log(
+                {**{f"train/{metric}": val for metric, val in metrics.items()}},
+                step=iteration,
+            )
 
         if iteration % config.log_interval == 0:
             progress.display(iteration)
@@ -160,8 +169,10 @@ def train(iteration, log_metrics, state, train_loader, schedule_fn, rngs, ckpt_d
         if iteration % config.save_interval == 0:
             if is_master_process:
                 state_ = jax_utils.unreplicate(state)
-                save_path = checkpoints.save_checkpoint(ckpt_dir, state_, state_.step, keep=1)
-                print('Saved checkpoint to', save_path)
+                save_path = checkpoints.save_checkpoint(
+                    ckpt_dir, state_, state_.step, keep=1
+                )
+                print("Saved checkpoint to", save_path)
                 del state_  # Needed to prevent a memory leak bug
 
         progress.update(time=time.time() - end)
@@ -176,7 +187,7 @@ def eval_step(batch, state, vocab_size):
     inputs = batch[0]
     targets = batch[1]
 
-    variables = {'params': state.params, **state.model_state}
+    variables = {"params": state.params, **state.model_state}
     out = state.apply_fn(
         variables,
         inputs,
@@ -188,17 +199,17 @@ def eval_step(batch, state, vocab_size):
 
     loss = optax.softmax_cross_entropy(logits, labels)
     preds = jnp.argmax(logits, axis=-1)
-    accuracy = (preds == targets)
+    accuracy = preds == targets
     return loss, accuracy
 
 
 def eval_step_synthetic(batch, state, vocab_size):
     """Different eval loss functions for
-       synthetic associative_recall task"""
+    synthetic associative_recall task"""
     inputs = batch[0]
     targets = batch[1]
 
-    variables = {'params': state.params, **state.model_state}
+    variables = {"params": state.params, **state.model_state}
     out = state.apply_fn(
         variables,
         inputs,
@@ -210,7 +221,7 @@ def eval_step_synthetic(batch, state, vocab_size):
 
     loss = optax.softmax_cross_entropy(logits, labels)
     preds = jnp.argmax(logits, axis=-1)
-    accuracy = (preds == targets[:, -1])
+    accuracy = preds == targets[:, -1]
 
     return loss, accuracy
 
@@ -223,9 +234,14 @@ def validate(iteration, state, test_loader, val=False):
     num_devices = jax.local_device_count()
 
     if config.dataset in ["wikitext103"]:
-        p_eval_step = jax.pmap(partial(eval_step, vocab_size=config.vocab_size), axis_name='batch')
+        p_eval_step = jax.pmap(
+            partial(eval_step, vocab_size=config.vocab_size), axis_name="batch"
+        )
     elif config.dataset in ["icl_synthetics"]:
-        p_eval_step = jax.pmap(partial(eval_step_synthetic, vocab_size=config.vocab_size), axis_name='batch')
+        p_eval_step = jax.pmap(
+            partial(eval_step_synthetic, vocab_size=config.vocab_size),
+            axis_name="batch",
+        )
     else:
         raise NotImplementedError("Dataset not implemented")
 
@@ -251,47 +267,54 @@ def validate(iteration, state, test_loader, val=False):
         else:
             prefix = "test"
 
-        print(prefix+'/loss:', avg_loss)
-        print(prefix + '/perplexity:', avg_perplexity)
-        print(prefix + '/accuracy:', avg_accuracy)
+        print(prefix + "/loss:", avg_loss)
+        print(prefix + "/perplexity:", avg_perplexity)
+        print(prefix + "/accuracy:", avg_accuracy)
 
-        wandb.log({prefix+'/loss': avg_loss}, step=iteration)
-        wandb.log({prefix+'/perplexity': avg_perplexity}, step=iteration)
-        wandb.log({prefix + '/accuracy': avg_accuracy}, step=iteration)
+        wandb.log({prefix + "/loss": avg_loss}, step=iteration)
+        wandb.log({prefix + "/perplexity": avg_perplexity}, step=iteration)
+        wandb.log({prefix + "/accuracy": avg_accuracy}, step=iteration)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output_dir', type=str, required=True)
-    parser.add_argument('-c', '--config', type=str, required=True)
+    parser.add_argument("-o", "--output_dir", type=str, required=True)
+    parser.add_argument("-c", "--config", type=str, required=True)
+    parser.add_argument("-d", "--data_dir", type=str, required=True)
     args = parser.parse_args()
 
     args.run_id = args.output_dir
 
-    print(f'JAX process: {jax.process_index()} / {jax.process_count()}')
-    print(f'JAX total devices: {jax.device_count()}')
-    print(f'JAX local devices: {jax.local_device_count()}')
+    print(f"JAX process: {jax.process_index()} / {jax.process_count()}")
+    print(f"JAX total devices: {jax.device_count()}")
+    print(f"JAX local devices: {jax.local_device_count()}")
 
     if not osp.isabs(args.output_dir):
-        if 'DATA_DIR' not in os.environ:
-            os.environ['DATA_DIR'] = 'logs'
-            print('DATA_DIR environment variable not set, default to logs/')
-        root_folder = os.environ['DATA_DIR']
+        if "DATA_DIR" not in os.environ:
+            os.environ["DATA_DIR"] = "logs"
+            print("DATA_DIR environment variable not set, default to logs/")
+        root_folder = os.environ["DATA_DIR"]
         args.output_dir = osp.join(root_folder, args.output_dir)
 
-    config = yaml.safe_load(open(args.config, 'r'))
-    if os.environ.get('DEBUG') == '1':
-        config['save_interval'] = 2
-        config['log_interval'] = 1
-        args.output_dir = osp.join(osp.dirname(args.output_dir), f'DEBUG_{osp.basename(args.output_dir)}')
-        args.run_id = f'DEBUG_{args.run_id}'
+    config = yaml.safe_load(open(args.config, "r"))
+
+    # read the data_dir from the command line
+    config.data_kwargs["data_dir"] = args.data_dir
+
+    if os.environ.get("DEBUG") == "1":
+        config["save_interval"] = 2
+        config["log_interval"] = 1
+        args.output_dir = osp.join(
+            osp.dirname(args.output_dir), f"DEBUG_{osp.basename(args.output_dir)}"
+        )
+        args.run_id = f"DEBUG_{args.run_id}"
 
     print(f"Logging to {args.output_dir}")
     os.makedirs(args.output_dir, exist_ok=True)
 
     args_d = vars(args)
     args_d.update(config)
-    pickle.dump(args, open(osp.join(args.output_dir, 'args'), 'wb'))
+    pickle.dump(args, open(osp.join(args.output_dir, "args"), "wb"))
     config = args
 
     is_master_process = jax.process_index() == 0
