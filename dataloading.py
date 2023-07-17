@@ -99,7 +99,7 @@ def create_wikitext_dataset(config: dict):  # -> ReturnType:
         "gpt2",
         dataset_config_name="wikitext-103-raw-v1",
         max_length=config.l_max,
-        cache_dir=config["data_dir"],
+        cache_dir=config.data_dir,
         val_ratio=0.0005,
         val_split_seed=2357,
         add_eos=True,
