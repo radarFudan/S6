@@ -91,7 +91,7 @@ def print_model_size(params, name=""):
     )(params)
     total_params_size = sum(jax.tree_leaves(param_sizes))
     # I want the model to print the shapes of different parameters
-    # print("model parameter shapes:", param_sizes)
+    print("model parameter shapes:", param_sizes)
     print("model parameter count:", total_params_size)
 
 
