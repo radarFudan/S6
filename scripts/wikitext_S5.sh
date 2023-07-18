@@ -1,7 +1,7 @@
 #!/bin/bash
 
 data_dir="$(cat .env)"
-DATA_DIR=./logs/ python train.py -o Hyena-S5-20 -c configs/hyena_S5/wikitext_S5.yaml -d data_dir
+DATA_DIR=./logs/ python train.py -o Hyena-S5-32 -c configs/hyena_S5/wikitext_S5.yaml -d data_dir
 
 # Params
 # (50257*768+12*(768*64*64+768*768*4*2))/1024/1024=126.80932617, number of params

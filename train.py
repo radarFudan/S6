@@ -88,6 +88,7 @@ def main():
     ckpt_dir = osp.join(config.output_dir, "checkpoints")
 
     rngs = random.split(rng, jax.local_device_count())
+    not_memory_stats = True
     while iteration <= config.total_steps:
         iteration, state, rngs = train(
             iteration, log_metrics, state, train_loader, schedule_fn, rngs, ckpt_dir
@@ -96,6 +97,10 @@ def main():
         validate(iteration, state, val_loader, val=True)
 
         validate(iteration, state, test_loader)
+
+        if not_memory_stats:
+            jax.local_devices()[0].memory_stats()
+            not_memory_stats = False
 
 
 def train_step(batch, state, rng, vocab_size):
