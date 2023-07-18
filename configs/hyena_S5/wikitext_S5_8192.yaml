@@ -24,7 +24,7 @@ log_interval: 50
 dataset: "wikitext103"
 data_dir: null
 vocab_size: 50257
-l_max: 4096
+l_max: 8192
 
 data_kwargs:
     batch_size: 4

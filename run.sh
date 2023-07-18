@@ -8,4 +8,4 @@ pip3 install --upgrade "jax[cuda12_local]" -f https://storage.googleapis.com/jax
 
 pip3 install nvidia-cudnn-cu12==8.9.2.26 wandb tensorflow==2.12.0 datasets
 
-wandb offline && DATA_DIR=./wsd/S5/logs python ./wsd/S5/train.py -o hyena_S5_wikitext_deeper_wider --config ./wsd/S5/configs/hyena_S5/wikitext_S5_deeper_wider.yaml
+wandb offline && bash scripts/wikitext_S5_8192.sh
