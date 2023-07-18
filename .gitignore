@@ -166,3 +166,4 @@ cache_dir/
 raw_datasets/
 
 logs/
+data_dir/

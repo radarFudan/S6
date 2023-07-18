@@ -25,8 +25,8 @@ def map_nested_fn(fn):
 
 
 def map_nested_fn_with_keyword(keyword_1, keyword_2):
-    '''labels all the leaves that are descendants of keyword_1 with keyword 1,
-    else label the leaf with keyword_2'''
+    """labels all the leaves that are descendants of keyword_1 with keyword 1,
+    else label the leaf with keyword_2"""
 
     def map_fn(nested_dict):
         output_dict = {}
@@ -61,7 +61,13 @@ def reshape_batch_per_device(x, num_devices):
     if ragged:
         msg = "batch size must be divisible by device count, got {} and {}."
         raise ValueError(msg.format(x.shape[0], num_devices))
-    return x.reshape((num_devices, batch_size_per_device, ) + (x.shape[1:]))
+    return x.reshape(
+        (
+            num_devices,
+            batch_size_per_device,
+        )
+        + (x.shape[1:])
+    )
 
 
 class TrainState(train_state.TrainState):
@@ -78,32 +84,37 @@ def get_first_device(x):
     return jax.device_get(x)
 
 
-def print_model_size(params, name=''):
+def print_model_size(params, name=""):
     fn_is_complex = lambda x: x.dtype in [np.complex64, np.complex128]
-    param_sizes = map_nested_fn(lambda k, param: param.size * (2 if fn_is_complex(param) else 1))(params)
+    param_sizes = map_nested_fn(
+        lambda k, param: param.size * (2 if fn_is_complex(param) else 1)
+    )(params)
     total_params_size = sum(jax.tree_leaves(param_sizes))
-    print('model parameter count:', total_params_size)
+    # I want the model to print the shapes of different parameters
+    # print("model parameter shapes:", param_sizes)
+    print("model parameter count:", total_params_size)
 
 
 def get_learning_rate_fn(config, lr):
-    if config.lr_schedule == 'cosine':
+    if config.lr_schedule == "cosine":
         learning_rate_fn = optax.warmup_cosine_decay_schedule(
-            init_value=0.,
+            init_value=0.0,
             peak_value=lr,
             warmup_steps=config.warmup_steps,
-            decay_steps=config.total_steps - config.warmup_steps
+            decay_steps=config.total_steps - config.warmup_steps,
         )
-    elif config.lr_schedule == 'constant':
-        learning_rate_fn = optax.join_schedules([
-            optax.linear_schedule(
-                init_value=0.,
-                end_value=lr,
-                transition_steps=config.warmup_steps
-            ),
-            optax.constant_schedule(lr)
-        ], [config.warmup_steps])
+    elif config.lr_schedule == "constant":
+        learning_rate_fn = optax.join_schedules(
+            [
+                optax.linear_schedule(
+                    init_value=0.0, end_value=lr, transition_steps=config.warmup_steps
+                ),
+                optax.constant_schedule(lr),
+            ],
+            [config.warmup_steps],
+        )
     else:
-        raise ValueError(f'Unknown schedule: {config.lr_schedule}')
+        raise ValueError(f"Unknown schedule: {config.lr_schedule}")
 
     return learning_rate_fn
 
@@ -112,35 +123,46 @@ def get_optimizer(config, params):
     if config.layer == "hyena":
         optimizers = {}
 
-        optimizers["implicit_filter"] = optax.adamw(learning_rate=get_learning_rate_fn(config, config.implicit_filter_lr),
-                                                    b1=0.9, b2=0.999,
-                                                    weight_decay=config.implicit_filter_weight_decay)
+        optimizers["implicit_filter"] = optax.adamw(
+            learning_rate=get_learning_rate_fn(config, config.implicit_filter_lr),
+            b1=0.9,
+            b2=0.999,
+            weight_decay=config.implicit_filter_weight_decay,
+        )
 
         learning_rate_fn = get_learning_rate_fn(config, config.lr)
-        optimizers["__default__"] = optax.adamw(learning_rate=learning_rate_fn, b1=0.9, b2=0.999,
-                                                weight_decay=config.weight_decay)
+        optimizers["__default__"] = optax.adamw(
+            learning_rate=learning_rate_fn,
+            b1=0.9,
+            b2=0.999,
+            weight_decay=config.weight_decay,
+        )
 
         name_map = map_nested_fn_with_keyword("implicit_filter", "__default__")(params)
         tx = optax.multi_transform(optimizers, name_map)
         return tx, learning_rate_fn
 
     elif config.layer == "S5_operator":
-
         ssm_lrs = ["B", "Lambda_re", "Lambda_im"]
-        ssm_fn = map_nested_fn(
-            lambda k, _: "ssm"
-            if k in ssm_lrs
-            else "regular"
-        )
+        ssm_fn = map_nested_fn(lambda k, _: "ssm" if k in ssm_lrs else "regular")
 
         learning_rate_fn = get_learning_rate_fn(config, config.lr)
         tx = optax.multi_transform(
             {
-                "ssm": optax.adamw(learning_rate=get_learning_rate_fn(config, config.implicit_filter_lr),
-                                                    b1=0.9, b2=0.999,
-                                                    weight_decay=config.implicit_filter_weight_decay),
-                "regular": optax.adamw(learning_rate=learning_rate_fn, b1=0.9, b2=0.999,
-                                                weight_decay=config.weight_decay),
+                "ssm": optax.adamw(
+                    learning_rate=get_learning_rate_fn(
+                        config, config.implicit_filter_lr
+                    ),
+                    b1=0.9,
+                    b2=0.999,
+                    weight_decay=config.implicit_filter_weight_decay,
+                ),
+                "regular": optax.adamw(
+                    learning_rate=learning_rate_fn,
+                    b1=0.9,
+                    b2=0.999,
+                    weight_decay=config.weight_decay,
+                ),
             },
             ssm_fn,
         )
@@ -149,25 +171,27 @@ def get_optimizer(config, params):
 
 
 def init_model_state(rng_key, model, input, config):
-    variables = model.init({k: rng_key for k in ['params', *config.rng_keys]}, input, training=True
+    variables = model.init(
+        {k: rng_key for k in ["params", *config.rng_keys]}, input, training=True
     ).unfreeze()
-    params = variables.pop('params')
+    params = variables.pop("params")
     model_state = variables
     print_model_size(params)
 
     tx, learning_rate_fn = get_optimizer(config, params)
 
-    return TrainState.create(
-        apply_fn=model.apply,
-        params=params,
-        tx=tx,
-        model_state=model_state
-    ), learning_rate_fn
+    return (
+        TrainState.create(
+            apply_fn=model.apply, params=params, tx=tx, model_state=model_state
+        ),
+        learning_rate_fn,
+    )
 
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
-    def __init__(self, name, fmt=':f'):
+
+    def __init__(self, name, fmt=":f"):
         self.name = name
         self.fmt = fmt
         self.reset()
@@ -185,15 +209,14 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
     def __str__(self):
-        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
         return fmtstr.format(**self.__dict__)
 
 
 class ProgressMeter(object):
     def __init__(self, total_iters, meter_names, prefix=""):
         self.iter_fmtstr = self._get_iter_fmtstr(total_iters)
-        self.meters = OrderedDict({mn: AverageMeter(mn, ':6.3f')
-                                   for mn in meter_names})
+        self.meters = OrderedDict({mn: AverageMeter(mn, ":6.3f") for mn in meter_names})
         self.prefix = prefix
 
     def update(self, n=1, **kwargs):
@@ -203,9 +226,9 @@ class ProgressMeter(object):
     def display(self, iteration):
         entries = [self.prefix + self.iter_fmtstr.format(iteration)]
         entries += [str(meter) for meter in self.meters.values()]
-        print('\t'.join(entries))
+        print("\t".join(entries))
 
     def _get_iter_fmtstr(self, total_iters):
         num_digits = len(str(total_iters // 1))
-        fmt = '{:' + str(num_digits) + 'd}'
-        return '[' + fmt + '/' + fmt.format(total_iters) + ']'
+        fmt = "{:" + str(num_digits) + "d}"
+        return "[" + fmt + "/" + fmt.format(total_iters) + "]"

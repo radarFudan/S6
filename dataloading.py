@@ -21,7 +21,7 @@ def make_data_loader(
     dset,
     dobj,
     seed: int,
-    batch_size: int = 128,
+    batch_size: int,
     shuffle: bool = True,
     drop_last: bool = True,
     collate_fn: callable = None,
