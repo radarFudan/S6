@@ -8,4 +8,4 @@ pip3 install --upgrade "jax[cuda12_local]" -f https://storage.googleapis.com/jax
 
 pip3 install nvidia-cudnn-cu12==8.9.2.26 wandb tensorflow==2.12.0 datasets
 
-wandb offline && bash scripts/wikitext_S5_8192.sh
+cd wsd/S6 && wandb offline && bash scripts/wikitext_S5_8192.sh
